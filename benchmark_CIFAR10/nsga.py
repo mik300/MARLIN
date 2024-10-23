@@ -10,6 +10,7 @@ from pymoo.operators.repair.rounding import RoundingRepair
 from pymoo.operators.crossover.pntx import SinglePointCrossover
 from pymoo.operators.mutation.pm import PM
 from pathlib import Path
+from neural_networks.utils import get_loaders_split, evaluate_test_accuracy, calibrate_model, load_scaling_factors, save_scaling_factors, save_weights, save_activations
 import benchmark_CIFAR10.Utils.GA_utils as GA_utils
 import numpy as np
 import time
@@ -20,31 +21,36 @@ import argparse
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--neural-network', default="resnet8", type=str, help="Choose one from fashionmnist, mnist, resnet8, resnet14, resnet20, resnet32, resnet50, resnet56")
-    parser.add_argument('--batch-size', default=100, type=int, help="Number of images processed during each iteration")
-    parser.add_argument('--data-dir', default="/data/dataset/pytorch_only/", type=str, help="Directory in which the MNIST and FASHIONMNIST dataset are stored or should be downloaded")
+    parser.add_argument('--neural_network', default="resnet8", type=str, help="Choose one from fashionmnist, mnist, resnet8, resnet14, resnet20, resnet32, resnet50, resnet56")
+    parser.add_argument('--batch_size', default=100, type=int, help="Number of images processed during each iteration")
+    parser.add_argument('--data_dir', default="../data/dataset/pytorch_only/", type=str, help="Directory in which the MNIST and FASHIONMNIST dataset are stored or should be downloaded")
     parser.add_argument('--epochs', default=1, type=int, help="Number of retraining epochs executed for each individual during the NSGA search")
-    parser.add_argument('--lr-max', default=1e-2, type=float, help="Maximum learning rate for 'cyclic' scheduler, standard learning rate for 'flat' scheduler")
-    parser.add_argument('--lr-min', default=1e-4, type=float, help="Minimum learning rate for 'cyclic' scheduler")
-    parser.add_argument('--lr-type', default="cyclic", type=str, help="Select learning rate scheduler, choose between 'cyclic' or 'flat'")
-    parser.add_argument('--weight-decay', default=5e-4, type=float, help="Weight decay applied during the optimization step")
+    parser.add_argument('--lr_max', default=1e-2, type=float, help="Maximum learning rate for 'cyclic' scheduler, standard learning rate for 'flat' scheduler")
+    parser.add_argument('--lr_min', default=1e-4, type=float, help="Minimum learning rate for 'cyclic' scheduler")
+    parser.add_argument('--lr_type', default="cyclic", type=str, help="Select learning rate scheduler, choose between 'cyclic' or 'flat'")
+    parser.add_argument('--weight_decay', default=5e-4, type=float, help="Weight decay applied during the optimization step")
     parser.add_argument('--fname', default="baseline_model.pth", type=str, help="Name of the model, must include .pth")
-    parser.add_argument('--num-workers', default=4, type=int, help="Number of threads used during the preprocessing of the dataset")
+    parser.add_argument('--num_workers', default=4, type=int, help="Number of threads used during the preprocessing of the dataset")
     parser.add_argument('--threads', default=16, type=int, help="Number of threads used during the inference, used only when neural-network-type is set to adapt")
     parser.add_argument('--seed', default=42, type=int, help="Seed for reproducible random initialization")
-    parser.add_argument('--lr-momentum', default=0.9, type=float, help="Learning rate momentum")
-    parser.add_argument('--split-val', default=0.1, type=float, help="The split-val is used to divide the training set in training and validation with the following dimensions: train=train_images*(1-split_val)  valid=train_images*split_val")
-    parser.add_argument('--partial-val', default=10, type=float, help="The partial-val defines the portion of the training set used for partial retraining during the evaluation of each individual. The number of train images is defined as train=train_images*(1-split_val)/partial_val")
-    parser.add_argument('--retrain-type', default='full', type=str, help="Defines whether each approximate neural network evaluated during the search is not retrained, retrained entirely or retrained by updating just the bias of convolutional layers. Choose between 'none', 'bias', and 'full'")
-    parser.add_argument('--start-from-last', default=False, type=bool, help="Set to true to reload a previous pareto front configuration")
-    parser.add_argument('--axx-linear', default=False, type=bool, help="Set to True to enable approximate computing of linear layers. Ignored by default for CIFAR10 networks")
+    parser.add_argument('--lr_momentum', default=0.9, type=float, help="Learning rate momentum")
+    parser.add_argument('--split_val', default=0.1, type=float, help="The split-val is used to divide the training set in training and validation with the following dimensions: train=train_images*(1-split_val)  valid=train_images*split_val")
+    parser.add_argument('--partial_val', default=10, type=float, help="The partial-val defines the portion of the training set used for partial retraining during the evaluation of each individual. The number of train images is defined as train=train_images*(1-split_val)/partial_val")
+    parser.add_argument('--retrain_type', default='full', type=str, help="Defines whether each approximate neural network evaluated during the search is not retrained, retrained entirely or retrained by updating just the bias of convolutional layers. Choose between 'none', 'bias', and 'full'")
+    parser.add_argument('--start_from_last', default=False, type=bool, help="Set to true to reload a previous pareto front configuration")
+    parser.add_argument('--axx_linear', default=False, type=bool, help="Set to True to enable approximate computing of linear layers. Ignored by default for CIFAR10 networks")
     parser.add_argument('--population', default=70, type=int, help="The number of new individuals evaluated at each iteration. Each individal is an approximate NN")
     parser.add_argument('--generations', default=80, type=int, help="The number of generations explored during the genetic search")
-    parser.add_argument('--crossover-probability', default=0.8, type=float, help="Probability of performing a single-point crossover operation on an individual")
-    parser.add_argument('--mutation-probability', default=0.8, type=float, help="Probability of gene mutation occurring on an individual")
-    parser.add_argument('--axx-levels', default=255, type=int, help="Number of approximation levels supported by the multiplier, or number of LUT corresponding to different multipliers")
-    parser.add_argument('--disable-aug', default=True, type=bool, help="Set to True to disable data augmentation to obtain deterministic results")
-
+    parser.add_argument('--crossover_probability', default=0.8, type=float, help="Probability of performing a single-point crossover operation on an individual")
+    parser.add_argument('--mutation_probability', default=0.8, type=float, help="Probability of gene mutation occurring on an individual")
+    parser.add_argument('--axx_levels', default=255, type=int, help="Number of approximation levels supported by the multiplier, or number of LUT corresponding to different multipliers")
+    parser.add_argument('--disable_aug', default=True, type=bool, help="Set to True to disable data augmentation to obtain deterministic results")
+    parser.add_argument('--execution_type', default='adapt', type=str, help="Leave it like this")
+    parser.add_argument('--act-bit', default=8, type=int, help="activation precision used for all layers")
+    parser.add_argument('--weight_bit', default=8, type=int, help="weight precision used for all layers")
+    parser.add_argument('--bias_bit', default=32, type=int, help="bias precision used for all layers")
+    parser.add_argument('--fake_quant', default=True, type=bool, help="Set to True to use fake quantization, set to False to use integer quantization")
+    parser.add_argument('--activation_function', default="ReLU", type=str, help="Activation function used for each act layer.")
     return parser.parse_args()
 
 
@@ -53,8 +59,16 @@ def main():
 
     train_args = {'epochs': params.epochs, 'lr_min': params.lr_min, 'lr_max': params.lr_max, 'batch': params.batch_size,
                   'weight_decay': params.weight_decay, 'num_workers': params.num_workers, 'lr_momentum': params.lr_momentum}
-    model_name = "./neural_networks/models/" + params.neural_network + "_quant_baseline_model.pth"
+    model_name = "../neural_networks/models/" + params.neural_network + "_quant_baseline_model.pth"
 
+    # namebit = "_a"+str(params.act_bit)+"_w"+str(params.weight_bit)+"_b"+str(params.bias_bit)
+    # if params.fake_quant:
+    #     namequant = "_fake"
+    # else:
+    #     namequant = "_int"
+    # model_name = "./neural_networks/models/" + params.neural_network + namebit + namequant + "_quant_" + "cifar10" + "_" + params.activation_function + "_calibrated.pth"
+
+    filename_sc = "../neural_networks/models/" + 'resnet8_a8_w8_b32_fake_quant_cifar10_ReLU_scaling_factors.pkl'
     torch.set_num_threads(params.threads)
 
     pkl_repo = './benchmark_CIFAR10/results_pkl/'
@@ -131,9 +145,11 @@ def main():
                                                                                 split_val=params.split_val,
                                                                                 disable_aug=params.disable_aug)
 
+    num_classes = 10
+    mode= {"execution_type":params.execution_type, "act_bit":params.act_bit, "weight_bit":params.weight_bit, "bias_bit":params.bias_bit, "fake_quant":params.fake_quant, "classes":num_classes, "act_type":params.activation_function}
 
     if params.neural_network == "resnet8":
-        model = resnet8('adapt')
+        model = resnet8(mode)
     elif params.neural_network == "resnet14":
         model = resnet14('adapt')
     elif params.neural_network == "resnet20":
@@ -149,6 +165,7 @@ def main():
     else:
         exit("error unknown CNN model name")
 
+    load_scaling_factors(model, filename_sc, 'cpu')
     checkpoint = torch.load(model_name, map_location='cpu')
     model.to('cpu')
     model.load_state_dict(checkpoint['model_state_dict'])

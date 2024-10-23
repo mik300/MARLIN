@@ -6,3 +6,10 @@ riscv_characterization/repo_changes/*/*.patch
 !neural_networks/models/.gitkeep
 !neural_networks/adapt/cpu-kernels-8x8/axx_mults_8x8/.gitkeep
 !neural_networks/adapt/cpu-kernels-9x9/axx_mults_9x9/.gitkeep
+neural_networks/adapt/cpu-kernels-8x8/*
+riscv_characterization/vendor/dory/*
+riscv_characterization/vendor/nemo/*
+riscv_characterization/vendor/pulp-riscv-gnu-toolchain/*
+riscv_characterization/vendor/pulp-sdk/*
+riscv_characterization/vendor/pulp/*
+benchmark_CIFAR10/results_pkl/*
